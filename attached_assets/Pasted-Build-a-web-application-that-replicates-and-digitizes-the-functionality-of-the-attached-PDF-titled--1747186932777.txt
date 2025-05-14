@@ -1,0 +1,123 @@
+Build a web application that replicates and digitizes the functionality of the attached PDF titled “OJT log blank.” The app should be extremely simple and focused. The user experience flow and features are as follows:
+
+🔐 Authentication
+
+Use Magic Link login (email-based, no password).
+
+No dashboard—after login, the user is taken directly to their profile page which displays their personal OJT log.
+
+The app should associate all data with the authenticated user.
+
+📄 Main UI (Profile Page)
+
+This page should visually replicate the structure of the paper OJT log:
+
+Display all previously entered job rows (both verified and unverified), forming a single continuous log, just like a paper sheet that grows as you add lines.
+
+The interface should contain:
+
+A single entry row at the top for entering new job details.
+
+A button “Add Line” that duplicates the entry row for logging multiple rows at once.
+
+A persistent total summary at the bottom of the page, showing total hours logged for each NDT method.
+
+🧾 Row Structure (Each Entry)
+
+Each log entry contains the following fields:
+
+Job Date
+
+Job Location
+
+Method (dropdown with the following options: ET, RFT, MT, PT, RT, UT Thk., UTSW, PMI, LSI)
+
+Hours
+
+Verify Signature button
+
+When the user fills in method and hours, the Running Totals Tracker should dynamically update per method.
+
+✅ Supervisor Signature Process
+
+When "Verify Signature" is clicked:
+
+Open a modal to collect the following supervisor info:
+
+Supervisor Name
+
+Supervisor Email
+
+Supervisor Phone Number
+
+Supervisor Certification Level
+
+Supervisor Company
+
+Save the supervisor info locally to the user’s profile (supervisor bank).
+
+In future verifications, allow selection from a dropdown of saved supervisors.
+
+When selected, auto-fill the modal with their info (but still allow manual editing).
+
+On Submit:
+
+Send an email to the supervisor with:
+
+Technician name (from user account)
+
+Method, Hours, Date, and Location
+
+A link to verify the hours
+
+Clicking the link should open a dedicated verification page (or modal) where the supervisor enters their name again and clicks “Verify.”
+
+Upon verification:
+
+The corresponding row becomes grayed out/locked.
+
+Show “✔ Verified by [Supervisor Name]” in the Signature column.
+
+The entry becomes non-editable.
+
+The system generates a hash or unique verification token for auditability.
+
+The verified hours still count toward the totals.
+
+📤 PDF Export
+
+Include a button: “Export Verified Hours as PDF”
+
+The exported document should visually replicate the original paper log format.
+
+Only include verified entries in the exported PDF.
+
+Ensure clean formatting, consistent column widths, and legible layout for printing.
+
+🧱 Database & Persistence
+
+Use Replit’s built-in SQL Database (PostgreSQL via Neon) for persistent storage.
+
+Store:
+
+User accounts
+
+All job log entries (with fields above)
+
+Supervisor bank (per user)
+
+Verification metadata (timestamps, supervisor name, email used, etc.)
+
+PDF-ready verification token or hash for each verified row
+
+💡 Misc Notes
+
+Each row should behave like a paper line.
+
+No limit to how many rows a user can add.
+
+The UI should be mobile-responsive and fast.
+
+No need for advanced user settings—just login and log hours.
+
+Once this is complete, the app should feel like a digital version of the physical OJT sheet, but with the power of automation, verification, and PDF output.
