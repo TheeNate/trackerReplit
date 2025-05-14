@@ -7,11 +7,14 @@ import { Input } from "@/components/ui/input";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
 import { loginFormSchema, type LoginFormValues } from "@/types";
+import { useLocation } from "wouter";
 
 export function MagicLink() {
   const [isLoading, setIsLoading] = useState(false);
   const [isSent, setIsSent] = useState(false);
+  const [directLink, setDirectLink] = useState<string | null>(null);
   const { toast } = useToast();
+  const [, setLocation] = useLocation();
   
   const form = useForm<LoginFormValues>({
     resolver: zodResolver(loginFormSchema),
@@ -24,12 +27,22 @@ export function MagicLink() {
     setIsLoading(true);
     
     try {
-      await apiRequest("POST", "/api/auth/request-magic-link", values);
+      const response = await apiRequest("POST", "/api/auth/request-magic-link", values);
       setIsSent(true);
-      toast({
-        title: "Magic link sent!",
-        description: "Check your email and click the link to log in.",
-      });
+      
+      // Check if we got a direct link (for development)
+      if (response.loginUrl) {
+        setDirectLink(response.loginUrl);
+        toast({
+          title: "Magic link ready!",
+          description: "Email delivery failed, but you can use the direct link below.",
+        });
+      } else {
+        toast({
+          title: "Magic link sent!",
+          description: "Check your email and click the link to log in.",
+        });
+      }
     } catch (error) {
       console.error(error);
       toast({
@@ -39,6 +52,12 @@ export function MagicLink() {
       });
     } finally {
       setIsLoading(false);
+    }
+  };
+  
+  const handleDirectLogin = () => {
+    if (directLink) {
+      window.location.href = directLink;
     }
   };
   
@@ -80,12 +99,29 @@ export function MagicLink() {
         </form>
       </Form>
       
-      {isSent && (
+      {isSent && !directLink && (
         <div className="mt-6">
           <div className="bg-muted p-4 rounded-md">
             <p className="text-center text-sm text-muted-foreground">
               Magic link sent! Check your email and click the link to log in.
             </p>
+          </div>
+        </div>
+      )}
+      
+      {directLink && (
+        <div className="mt-6">
+          <div className="bg-muted p-4 rounded-md">
+            <p className="text-center text-sm text-muted-foreground mb-3">
+              Email delivery failed (SendGrid requires verified sender), but you can use this direct link:
+            </p>
+            <Button 
+              onClick={handleDirectLogin} 
+              className="w-full"
+              variant="secondary"
+            >
+              Login with Direct Link
+            </Button>
           </div>
         </div>
       )}

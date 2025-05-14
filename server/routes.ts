@@ -1,13 +1,25 @@
-import express, { type Express, Request, Response } from "express";
+import express, { type Express, Request, Response, NextFunction } from "express";
 import { createServer, type Server } from "http";
 import { storage } from "./storage";
 import { randomBytes } from "crypto";
 import session from "express-session";
 import PgStore from "connect-pg-simple";
 import { pool } from "./db";
+import { db } from "./db";
+import { users, entries, supervisors, type User } from "@shared/schema";
+import { eq } from "drizzle-orm";
 import { sendMagicLink, sendVerificationRequest, sendVerificationConfirmation } from "./email";
 import { insertEntrySchema, insertSupervisorSchema, insertUserSchema } from "@shared/schema";
 import { z } from "zod";
+
+// Extend express-session types
+declare module "express-session" {
+  interface SessionData {
+    userId?: number;
+    magicLinkToken?: string;
+    magicLinkEmail?: string;
+  }
+}
 
 export async function registerRoutes(app: Express): Promise<Server> {
   // Setup session
@@ -66,9 +78,18 @@ export async function registerRoutes(app: Express): Promise<Server> {
         res.json({ message: "Magic link sent" });
       } catch (error) {
         console.error("Failed to send magic link email:", error);
-        // Still return success to the client even if email fails
-        // This is because we're logging the link for development purposes
-        res.json({ message: "Magic link sent (check server logs for link)" });
+        
+        // For development: generate direct link for testing
+        const baseUrl = process.env.REPLIT_DOMAINS ? 
+          `https://${process.env.REPLIT_DOMAINS.split(',')[0]}` : 
+          'http://localhost:5000';
+        const loginUrl = `${baseUrl}/login?token=${token}`;
+        
+        // Return the link directly for development purposes
+        res.json({ 
+          message: "Email delivery failed, but you can use this direct link:", 
+          loginUrl: loginUrl 
+        });
       }
     } catch (error) {
       console.error(error);
