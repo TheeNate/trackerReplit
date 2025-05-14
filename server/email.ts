@@ -1,35 +1,16 @@
-import nodemailer from 'nodemailer';
 import { Entry, User, Supervisor } from '@shared/schema';
+import sgMail from '@sendgrid/mail';
 
-// Configure email transport
-const createTransport = () => {
-  // In production, use an actual email service
-  // For development, use ethereal.email
-  if (process.env.NODE_ENV === 'production') {
-    return nodemailer.createTransport({
-      host: process.env.EMAIL_HOST || 'smtp.gmail.com',
-      port: parseInt(process.env.EMAIL_PORT || '587'),
-      secure: process.env.EMAIL_SECURE === 'true',
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
-      },
-    });
-  }
-  
-  // Create testing account for development
-  return nodemailer.createTransport({
-    host: 'smtp.ethereal.email',
-    port: 587,
-    secure: false,
-    auth: {
-      user: 'ethereal.user@ethereal.email',
-      pass: 'ethereal.pass',
-    },
-  });
-};
+// Configure SendGrid
+if (!process.env.SENDGRID_API_KEY) {
+  console.warn('SENDGRID_API_KEY not found, emails will not be sent');
+} else {
+  sgMail.setApiKey(process.env.SENDGRID_API_KEY);
+  console.log('SendGrid API key configured');
+}
 
-const transport = createTransport();
+// Default sender email
+const DEFAULT_FROM_EMAIL = 'noreply@ojtlogger.app';
 
 // Get base URL for links
 const getBaseUrl = () => {
@@ -49,7 +30,12 @@ export const sendMagicLink = async (
   const baseUrl = getBaseUrl();
   const loginUrl = `${baseUrl}/login?token=${token}`;
   
-  await transport.sendMail({
+  if (!process.env.SENDGRID_API_KEY) {
+    console.log('Magic link URL (for dev testing):', loginUrl);
+    return;
+  }
+  
+  const msg = {
     from: process.env.EMAIL_FROM || 'no-reply@ojtlogger.app',
     to: email,
     subject: 'Login to OJT Hours Tracker',
@@ -70,7 +56,18 @@ export const sendMagicLink = async (
         <p>This link will expire in 15 minutes.</p>
       </div>
     `,
-  });
+  };
+  
+  try {
+    await sgMail.send(msg);
+  } catch (error: any) {
+    console.error('Error sending magic link email:', error);
+    if (error.response) {
+      console.error(error.response.body);
+    }
+    // Print URL for development fallback
+    console.log('Magic link URL (fallback):', loginUrl);
+  }
 };
 
 // Send verification request email
@@ -88,7 +85,12 @@ export const sendVerificationRequest = async (
     displayMethod = 'UT Thk.';
   }
   
-  await transport.sendMail({
+  if (!process.env.SENDGRID_API_KEY) {
+    console.log('Verification URL (for dev testing):', verifyUrl);
+    return;
+  }
+  
+  const msg = {
     from: process.env.EMAIL_FROM || 'no-reply@ojtlogger.app',
     to: supervisor.email,
     subject: `Verification Request for OJT Hours from ${user.name}`,
@@ -117,7 +119,18 @@ export const sendVerificationRequest = async (
         <p>${verifyUrl}</p>
       </div>
     `,
-  });
+  };
+  
+  try {
+    await sgMail.send(msg);
+  } catch (error: any) {
+    console.error('Error sending verification request email:', error);
+    if (error.response) {
+      console.error(error.response.body);
+    }
+    // Print URL for development fallback
+    console.log('Verification URL (fallback):', verifyUrl);
+  }
 };
 
 // Notify user that their hours were verified
@@ -132,7 +145,12 @@ export const sendVerificationConfirmation = async (
     displayMethod = 'UT Thk.';
   }
   
-  await transport.sendMail({
+  if (!process.env.SENDGRID_API_KEY) {
+    console.log('Hours verified for user:', user.email);
+    return;
+  }
+  
+  const msg = {
     from: process.env.EMAIL_FROM || 'no-reply@ojtlogger.app',
     to: user.email,
     subject: 'OJT Hours Verified',
@@ -151,5 +169,14 @@ export const sendVerificationConfirmation = async (
         <p>These hours have been added to your verified OJT log.</p>
       </div>
     `,
-  });
+  };
+  
+  try {
+    await sgMail.send(msg);
+  } catch (error: any) {
+    console.error('Error sending verification confirmation email:', error);
+    if (error.response) {
+      console.error(error.response.body);
+    }
+  }
 };
