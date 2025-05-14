@@ -36,7 +36,7 @@ export const sendMagicLink = async (
   }
   
   const msg = {
-    from: process.env.EMAIL_FROM || 'no-reply@ojtlogger.app',
+    from: process.env.EMAIL_FROM || DEFAULT_FROM_EMAIL,
     to: email,
     subject: 'Login to OJT Hours Tracker',
     html: `
@@ -91,7 +91,7 @@ export const sendVerificationRequest = async (
   }
   
   const msg = {
-    from: process.env.EMAIL_FROM || 'no-reply@ojtlogger.app',
+    from: process.env.EMAIL_FROM || DEFAULT_FROM_EMAIL,
     to: supervisor.email,
     subject: `Verification Request for OJT Hours from ${user.name}`,
     html: `
@@ -151,7 +151,7 @@ export const sendVerificationConfirmation = async (
   }
   
   const msg = {
-    from: process.env.EMAIL_FROM || 'no-reply@ojtlogger.app',
+    from: process.env.EMAIL_FROM || DEFAULT_FROM_EMAIL,
     to: user.email,
     subject: 'OJT Hours Verified',
     html: `
