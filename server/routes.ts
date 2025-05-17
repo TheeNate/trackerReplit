@@ -8,9 +8,11 @@ import { pool } from "./db";
 import { db } from "./db";
 import { users, entries, supervisors, type User } from "@shared/schema";
 import { eq } from "drizzle-orm";
-import { sendMagicLink, sendVerificationRequest, sendVerificationConfirmation } from "./email";
+import { getBaseUrl, sendVerificationConfirmation } from "./email";
+import { sendMagicLinkEmail, sendVerificationEmail } from "./mailsender";
 import { insertEntrySchema, insertSupervisorSchema, insertUserSchema } from "@shared/schema";
 import { z } from "zod";
+import { compare, hash } from 'bcrypt';
 
 // Extend express-session types
 declare module "express-session" {
@@ -50,97 +52,78 @@ export async function registerRoutes(app: Express): Promise<Server> {
   };
 
   // Authentication routes
-  app.post("/api/auth/request-magic-link", async (req, res) => {
+  // Register new user
+  app.post("/api/auth/register", async (req, res) => {
     try {
-      const { email } = req.body;
-      if (!email) {
-        return res.status(400).json({ message: "Email is required" });
-      }
-
-      // Find or create user
-      let user = await storage.getUserByEmail(email);
-      if (!user) {
-        // Create new user with just email
-        const newUserData = insertUserSchema.parse({ email });
-        user = await storage.createUser(newUserData);
-      }
-
-      // Generate token
-      const token = randomBytes(32).toString("hex");
+      const { email, password, name, employeeNumber } = req.body;
       
-      // Store token in session (in a real app, store in database with expiration)
-      req.session.magicLinkToken = token;
-      req.session.magicLinkEmail = email;
-      
-      try {
-        // Send magic link email
-        await sendMagicLink(email, token);
-        res.json({ message: "Magic link sent" });
-      } catch (error) {
-        console.error("Failed to send magic link email:", error);
-        
-        // For development: generate direct link for testing
-        const baseUrl = process.env.REPLIT_DOMAINS ? 
-          `https://${process.env.REPLIT_DOMAINS.split(',')[0]}` : 
-          'http://localhost:5000';
-        const loginUrl = `${baseUrl}/login?token=${token}`;
-        
-        // Return the link directly for development purposes
-        res.json({ 
-          message: "Email delivery failed, but you can use this direct link:", 
-          loginUrl: loginUrl 
-        });
+      // Validate input
+      if (!email || !password) {
+        return res.status(400).json({ message: "Email and password are required" });
       }
+      
+      // Check if user already exists
+      const existingUser = await storage.getUserByEmail(email);
+      if (existingUser) {
+        return res.status(400).json({ message: "Email already registered" });
+      }
+      
+      // Hash password
+      const hashedPassword = await hash(password, 10);
+      
+      // Create user
+      const userData = insertUserSchema.parse({ 
+        email, 
+        password: hashedPassword,
+        name,
+        employeeNumber 
+      });
+      
+      const user = await storage.createUser(userData);
+      
+      // Log user in
+      req.session.userId = user.id;
+      
+      // Send user data (excluding password)
+      const { password: _, ...userWithoutPassword } = user;
+      res.status(201).json(userWithoutPassword);
     } catch (error) {
-      console.error(error);
-      res.status(500).json({ message: "Error sending magic link" });
+      console.error("Registration error:", error);
+      res.status(500).json({ message: "Error during registration" });
     }
   });
-
-  app.get("/api/auth/verify-magic-link", async (req, res) => {
+  
+  // Login with email/password
+  app.post("/api/auth/login", async (req, res) => {
     try {
-      const { token } = req.query;
+      const { email, password } = req.body;
       
-      if (!token || typeof token !== "string") {
-        return res.status(400).json({ message: "Invalid token" });
+      // Validate input
+      if (!email || !password) {
+        return res.status(400).json({ message: "Email and password are required" });
       }
       
-      // Verify the token matches and hasn't expired
-      if (
-        !req.session.magicLinkToken ||
-        req.session.magicLinkToken !== token
-      ) {
-        return res.status(401).json({ message: "Invalid or expired token" });
-      }
-      
-      // Get user by email
-      const email = req.session.magicLinkEmail;
-      if (!email) {
-        return res.status(401).json({ message: "Invalid session" });
-      }
-      
+      // Get user
       const user = await storage.getUserByEmail(email);
-      if (!user) {
-        return res.status(404).json({ message: "User not found" });
+      if (!user || !user.password) {
+        return res.status(401).json({ message: "Invalid email or password" });
       }
       
-      // Log the user in
-      req.session.userId = user.id;
-      delete req.session.magicLinkToken;
-      delete req.session.magicLinkEmail;
+      // Verify password
+      const passwordMatches = await compare(password, user.password);
+      if (!passwordMatches) {
+        return res.status(401).json({ message: "Invalid email or password" });
+      }
       
-      res.json({ 
-        message: "Authentication successful", 
-        user: {
-          id: user.id,
-          email: user.email,
-          name: user.name,
-          employeeNumber: user.employeeNumber
-        } 
-      });
+      // Login successful
+      req.session.userId = user.id;
+      
+      // Send user data (excluding password)
+      const { password: _, ...userWithoutPassword } = user;
+      res.json(userWithoutPassword);
     } catch (error) {
-      console.error(error);
-      res.status(500).json({ message: "Error verifying magic link" });
+      console.error("Login error:", error);
+      res.status(500).json({ message: "Error during login" });
     }
   });
 
@@ -161,12 +144,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "User not found" });
       }
       
-      res.json({
-        id: user.id,
-        email: user.email,
-        name: user.name,
-        employeeNumber: user.employeeNumber
-      });
+      // Send user data without password
+      const { password, ...userWithoutPassword } = user;
+      res.json(userWithoutPassword);
     } catch (error) {
       console.error(error);
       res.status(500).json({ message: "Error fetching user" });
@@ -198,12 +178,9 @@ export async function registerRoutes(app: Express): Promise<Server> {
         .where(eq(users.id, user.id))
         .returning();
       
-      res.json({
-        id: updatedUser[0].id,
-        email: updatedUser[0].email,
-        name: updatedUser[0].name,
-        employeeNumber: updatedUser[0].employeeNumber
-      });
+      // Send user data without password
+      const { password, ...userWithoutPassword } = updatedUser[0];
+      res.json(userWithoutPassword);
     } catch (error) {
       console.error(error);
       res.status(500).json({ message: "Error updating user" });
@@ -234,7 +211,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
         
         const createdEntries = [];
         for (const entryData of entriesData) {
-          const parsedData = insertEntrySchema.parse(entryData);
+          // Ensure date is parsed properly
+          const parsedData = insertEntrySchema.parse({
+            ...entryData,
+            date: new Date(entryData.date)
+          });
           const newEntry = await storage.createEntry(parsedData);
           createdEntries.push(newEntry);
         }
@@ -246,7 +227,11 @@ export async function registerRoutes(app: Express): Promise<Server> {
           userId
         };
         
-        const parsedData = insertEntrySchema.parse(entryData);
+        // Ensure date is parsed properly
+        const parsedData = insertEntrySchema.parse({
+          ...entryData,
+          date: new Date(entryData.date)
+        });
         const newEntry = await storage.createEntry(parsedData);
         
         res.status(201).json(newEntry);
@@ -344,13 +329,39 @@ export async function registerRoutes(app: Express): Promise<Server> {
         return res.status(404).json({ message: "User not found" });
       }
       
-      // Send verification email
-      await sendVerificationRequest(supervisor, user, entry);
+      // Get verification URL
+      const baseUrl = req.protocol + '://' + req.get('host');
+      const verificationUrl = `${baseUrl}/verify/${entry.verificationToken}`;
+      
+      // Log the verification link clearly in the console
+      console.log("\n-------------------------------------------------");
+      console.log("VERIFICATION LINK (For testing since email is not working):");
+      console.log(verificationUrl);
+      console.log("-------------------------------------------------\n");
+      
+      // Send email using mailsender service
+      const emailSent = await sendVerificationEmail(
+        supervisor.email,
+        user.name || 'User',
+        user.employeeNumber || '',
+        {
+          date: entry.date,
+          location: entry.location,
+          method: entry.method,
+          hours: entry.hours
+        },
+        verificationUrl
+      );
+      
+      if (!emailSent) {
+        console.log("Email delivery failed, but verification URL is available in logs above");
+      }
       
       res.json({ 
         message: "Verification request sent", 
         supervisor,
-        entry
+        entry,
+        note: "Check server logs for direct verification link"
       });
     } catch (error) {
       console.error(error);

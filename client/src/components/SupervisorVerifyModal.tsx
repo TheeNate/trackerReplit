@@ -10,6 +10,8 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import { Entry, Supervisor } from "@shared/schema";
 import { supervisorFormSchema, type SupervisorFormValues } from "@/types";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Check, Copy } from "lucide-react";
 
 interface SupervisorVerifyModalProps {
   isOpen: boolean;
@@ -21,7 +23,9 @@ interface SupervisorVerifyModalProps {
 export function SupervisorVerifyModal({ isOpen, onClose, onSuccess, entry }: SupervisorVerifyModalProps) {
   const [supervisors, setSupervisors] = useState<Supervisor[]>([]);
   const [isLoading, setIsLoading] = useState(false);
-  const [selectedSupervisor, setSelectedSupervisor] = useState<string>("");
+  const [selectedSupervisor, setSelectedSupervisor] = useState<string>("new");
+  const [verificationUrl, setVerificationUrl] = useState<string>("");
+  const [copied, setCopied] = useState(false);
   const { toast } = useToast();
   
   const form = useForm<SupervisorFormValues>({
@@ -35,12 +39,15 @@ export function SupervisorVerifyModal({ isOpen, onClose, onSuccess, entry }: Sup
     },
   });
   
-  // Load supervisors when modal opens
+  // Reset state when modal opens/closes
   useEffect(() => {
     if (isOpen) {
       loadSupervisors();
+      setSelectedSupervisor("new");
+      setVerificationUrl("");
+      form.reset();
     }
-  }, [isOpen]);
+  }, [isOpen, form]);
   
   const loadSupervisors = async () => {
     try {
@@ -61,7 +68,10 @@ export function SupervisorVerifyModal({ isOpen, onClose, onSuccess, entry }: Sup
   const handleSupervisorChange = (value: string) => {
     setSelectedSupervisor(value);
     
-    if (value) {
+    if (value === "new") {
+      // Clear form when "new supervisor" is selected
+      form.reset();
+    } else if (value) {
       // Find selected supervisor and populate form
       const supervisor = supervisors.find((s) => s.id.toString() === value);
       if (supervisor) {
@@ -71,9 +81,6 @@ export function SupervisorVerifyModal({ isOpen, onClose, onSuccess, entry }: Sup
         form.setValue("certificationLevel", supervisor.certificationLevel as any);
         form.setValue("company", supervisor.company);
       }
-    } else {
-      // Clear form when "new supervisor" is selected
-      form.reset();
     }
   };
   
@@ -81,23 +88,33 @@ export function SupervisorVerifyModal({ isOpen, onClose, onSuccess, entry }: Sup
     if (!entry) return;
     
     setIsLoading(true);
+    setCopied(false);
     
     try {
       // Submit verification request
-      const requestData = selectedSupervisor 
+      const requestData = selectedSupervisor && selectedSupervisor !== "new"
         ? { supervisorId: parseInt(selectedSupervisor) }
         : values;
       
-      await apiRequest("POST", `/api/verify-request/${entry.id}`, requestData);
+      const response = await apiRequest("POST", `/api/verify-request/${entry.id}`, requestData);
+      const data = await response.json();
       
       // Show success message
       toast({
         title: "Verification request sent",
-        description: "An email has been sent to the supervisor for verification.",
+        description: "A verification email has been sent to the supervisor.",
       });
       
-      // Close modal and notify parent component
-      onSuccess();
+      // For fallback purposes, generate a link directly if there's a token
+      if (data.entry && data.entry.verificationToken) {
+        const baseUrl = window.location.origin;
+        const url = `${baseUrl}/verify/${data.entry.verificationToken}`;
+        setVerificationUrl(url);
+      } else {
+        // Close modal and notify parent component if no direct verification link needed
+        onSuccess();
+        onClose();
+      }
     } catch (error) {
       console.error(error);
       toast({
@@ -105,6 +122,7 @@ export function SupervisorVerifyModal({ isOpen, onClose, onSuccess, entry }: Sup
         description: "Failed to send verification request. Please try again.",
         variant: "destructive",
       });
+      setVerificationUrl("");
     } finally {
       setIsLoading(false);
     }
@@ -139,7 +157,15 @@ export function SupervisorVerifyModal({ isOpen, onClose, onSuccess, entry }: Sup
   };
   
   return (
-    <Dialog open={isOpen} onOpenChange={onClose}>
+    <Dialog 
+      open={isOpen} 
+      onOpenChange={(open) => {
+        if (!open) {
+          setVerificationUrl("");
+          onClose();
+        }
+      }}
+    >
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
           <DialogTitle>Supervisor Verification</DialogTitle>
@@ -150,130 +176,172 @@ export function SupervisorVerifyModal({ isOpen, onClose, onSuccess, entry }: Sup
         
         {formatEntryDetails()}
         
-        <Form {...form}>
-          <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
-            <div className="mb-4">
-              <FormLabel>Select Saved Supervisor</FormLabel>
-              <Select
-                value={selectedSupervisor}
-                onValueChange={handleSupervisorChange}
-              >
-                <SelectTrigger>
-                  <SelectValue placeholder="Select or enter new supervisor" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="">Enter new supervisor</SelectItem>
-                  {supervisors.map((supervisor) => (
-                    <SelectItem key={supervisor.id} value={supervisor.id.toString()}>
-                      {supervisor.name} ({supervisor.email})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+        {verificationUrl ? (
+          <div className="space-y-4">
+            <Alert className="bg-amber-50 border-amber-200">
+              <AlertDescription>
+                The verification email has been sent, but in case it wasn't received, 
+                you can share this direct verification link with the supervisor:
+              </AlertDescription>
+            </Alert>
             
-            <div className="space-y-4">
-              <FormField
-                control={form.control}
-                name="name"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Supervisor Name</FormLabel>
-                    <FormControl>
-                      <Input {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
+            <div className="flex items-center space-x-2">
+              <Input 
+                value={verificationUrl}
+                readOnly
+                className="flex-1 bg-gray-50"
               />
-              
-              <FormField
-                control={form.control}
-                name="email"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Supervisor Email</FormLabel>
-                    <FormControl>
-                      <Input type="email" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              
-              <FormField
-                control={form.control}
-                name="phone"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Supervisor Phone</FormLabel>
-                    <FormControl>
-                      <Input type="tel" {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              
-              <FormField
-                control={form.control}
-                name="certificationLevel"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Certification Level</FormLabel>
-                    <Select
-                      value={field.value}
-                      onValueChange={field.onChange}
-                    >
-                      <FormControl>
-                        <SelectTrigger>
-                          <SelectValue placeholder="Select certification level" />
-                        </SelectTrigger>
-                      </FormControl>
-                      <SelectContent>
-                        <SelectItem value="Level I">Level I</SelectItem>
-                        <SelectItem value="Level II">Level II</SelectItem>
-                        <SelectItem value="Level III">Level III</SelectItem>
-                      </SelectContent>
-                    </Select>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-              
-              <FormField
-                control={form.control}
-                name="company"
-                render={({ field }) => (
-                  <FormItem>
-                    <FormLabel>Company</FormLabel>
-                    <FormControl>
-                      <Input {...field} />
-                    </FormControl>
-                    <FormMessage />
-                  </FormItem>
-                )}
-              />
-            </div>
-            
-            <DialogFooter className="mt-6">
-              <Button
-                type="button"
+              <Button 
+                size="icon"
                 variant="outline"
-                onClick={onClose}
-                disabled={isLoading}
+                onClick={() => {
+                  navigator.clipboard.writeText(verificationUrl);
+                  setCopied(true);
+                  setTimeout(() => setCopied(false), 2000);
+                }}
               >
-                Cancel
+                {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
               </Button>
-              <Button
-                type="submit"
-                disabled={isLoading}
+            </div>
+            
+            <div className="flex justify-end mt-4">
+              <Button 
+                onClick={() => {
+                  setVerificationUrl("");
+                  onSuccess();
+                  onClose();
+                }}
               >
-                {isLoading ? "Sending..." : "Send for Verification"}
+                Done
               </Button>
-            </DialogFooter>
-          </form>
-        </Form>
+            </div>
+          </div>
+        ) : (
+          <Form {...form}>
+            <form onSubmit={form.handleSubmit(handleSubmit)} className="space-y-4">
+              <div className="mb-4">
+                <FormLabel>Select Saved Supervisor</FormLabel>
+                <Select
+                  value={selectedSupervisor}
+                  onValueChange={handleSupervisorChange}
+                >
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select or enter new supervisor" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="new">Enter new supervisor</SelectItem>
+                    {supervisors.map((supervisor) => (
+                      <SelectItem key={supervisor.id} value={supervisor.id.toString()}>
+                        {supervisor.name} ({supervisor.email})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              
+              <div className="space-y-4">
+                <FormField
+                  control={form.control}
+                  name="name"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Supervisor Name</FormLabel>
+                      <FormControl>
+                        <Input {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                
+                <FormField
+                  control={form.control}
+                  name="email"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Supervisor Email</FormLabel>
+                      <FormControl>
+                        <Input type="email" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                
+                <FormField
+                  control={form.control}
+                  name="phone"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Supervisor Phone</FormLabel>
+                      <FormControl>
+                        <Input type="tel" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                
+                <FormField
+                  control={form.control}
+                  name="certificationLevel"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Certification Level</FormLabel>
+                      <Select
+                        value={field.value}
+                        onValueChange={field.onChange}
+                      >
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select certification level" />
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          <SelectItem value="Level I">Level I</SelectItem>
+                          <SelectItem value="Level II">Level II</SelectItem>
+                          <SelectItem value="Level III">Level III</SelectItem>
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                
+                <FormField
+                  control={form.control}
+                  name="company"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Company</FormLabel>
+                      <FormControl>
+                        <Input {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+              
+              <DialogFooter className="mt-6">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={onClose}
+                  disabled={isLoading}
+                >
+                  Cancel
+                </Button>
+                <Button
+                  type="submit"
+                  disabled={isLoading}
+                >
+                  {isLoading ? "Sending..." : "Send for Verification"}
+                </Button>
+              </DialogFooter>
+            </form>
+          </Form>
+        )}
       </DialogContent>
     </Dialog>
   );

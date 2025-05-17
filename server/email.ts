@@ -13,7 +13,7 @@ if (!process.env.SENDGRID_API_KEY) {
 const DEFAULT_FROM_EMAIL = 'noreply@ojtlogger.app';
 
 // Get base URL for links
-const getBaseUrl = () => {
+export const getBaseUrl = () => {
   const domain = process.env.REPLIT_DOMAINS ? 
     process.env.REPLIT_DOMAINS.split(',')[0] : 
     'localhost:5000';
@@ -26,13 +26,13 @@ const getBaseUrl = () => {
 export const sendMagicLink = async (
   email: string, 
   token: string
-): Promise<void> => {
+): Promise<string> => {
   const baseUrl = getBaseUrl();
   const loginUrl = `${baseUrl}/login?token=${token}`;
   
   if (!process.env.SENDGRID_API_KEY) {
     console.log('Magic link URL (for dev testing):', loginUrl);
-    return;
+    return loginUrl;
   }
   
   const msg = {
@@ -60,6 +60,7 @@ export const sendMagicLink = async (
   
   try {
     await sgMail.send(msg);
+    return loginUrl;
   } catch (error: any) {
     console.error('Error sending magic link email:', error);
     if (error.response) {
@@ -67,6 +68,7 @@ export const sendMagicLink = async (
     }
     // Print URL for development fallback
     console.log('Magic link URL (fallback):', loginUrl);
+    return loginUrl;
   }
 };
 
@@ -75,7 +77,7 @@ export const sendVerificationRequest = async (
   supervisor: Supervisor,
   user: User,
   entry: Entry
-): Promise<void> => {
+): Promise<string> => {
   const baseUrl = getBaseUrl();
   const verifyUrl = `${baseUrl}/verify/${entry.verificationToken}`;
   
@@ -87,7 +89,7 @@ export const sendVerificationRequest = async (
   
   if (!process.env.SENDGRID_API_KEY) {
     console.log('Verification URL (for dev testing):', verifyUrl);
-    return;
+    return verifyUrl;
   }
   
   const msg = {
@@ -123,6 +125,7 @@ export const sendVerificationRequest = async (
   
   try {
     await sgMail.send(msg);
+    return verifyUrl;
   } catch (error: any) {
     console.error('Error sending verification request email:', error);
     if (error.response) {
@@ -130,6 +133,7 @@ export const sendVerificationRequest = async (
     }
     // Print URL for development fallback
     console.log('Verification URL (fallback):', verifyUrl);
+    return verifyUrl;
   }
 };
 
