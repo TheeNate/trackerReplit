@@ -15,6 +15,9 @@ export default function VerifyPage() {
   const { toast } = useToast();
   const [isVerifying, setIsVerifying] = useState(false);
   
+  // Log token for debugging
+  console.log("Verification token:", token);
+  
   const form = useForm<VerificationFormValues>({
     resolver: zodResolver(verificationFormSchema),
     defaultValues: {
@@ -25,30 +28,33 @@ export default function VerifyPage() {
   // Query verification details
   const { data, isLoading, isError, error } = useQuery({
     queryKey: [`/api/verify/${token}`],
-    onError: (error) => {
-      toast({
-        title: "Error",
-        description: error instanceof Error ? error.message : "Failed to load verification details",
-        variant: "destructive",
-      });
-    },
+    enabled: !!token,
+    retry: 1,
   });
   
   const handleSubmit = async (values: VerificationFormValues) => {
     setIsVerifying(true);
     
     try {
+      // Extract supervisorName for verification
+      const { verifierName: supervisorName } = values;
+      
+      console.log("Sending verification to API:", token, supervisorName);
+      
       const response = await fetch(`/api/verify/${token}`, {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
         },
-        body: JSON.stringify(values),
+        body: JSON.stringify({ supervisorName }),
+        credentials: "include"
       });
       
+      const responseData = await response.json();
+      console.log("Verification response:", responseData);
+      
       if (!response.ok) {
-        const errorData = await response.json();
-        throw new Error(errorData.message || "Verification failed");
+        throw new Error(responseData.message || "Verification failed");
       }
       
       // Show success message and redirect to success page
@@ -60,7 +66,7 @@ export default function VerifyPage() {
       // Redirect to success page with data
       setLocation(`/success?token=${token}`);
     } catch (error) {
-      console.error(error);
+      console.error("Verification error:", error);
       toast({
         title: "Verification failed",
         description: error instanceof Error ? error.message : "An error occurred during verification",
@@ -95,7 +101,21 @@ export default function VerifyPage() {
     );
   }
   
-  const { entry, user } = data;
+  // Type guard to ensure data has the expected structure
+  if (!data || !('entry' in data) || !('user' in data)) {
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center px-4 py-8">
+        <div className="w-full max-w-md bg-white p-8 rounded-lg shadow-md text-center">
+          <h1 className="text-2xl font-semibold mb-2">Invalid Data Format</h1>
+          <p className="text-neutral-500">
+            The verification data appears to be in an invalid format. Please try again or contact support.
+          </p>
+        </div>
+      </div>
+    );
+  }
+  
+  const { entry, user } = data as { entry: any; user: any };
   
   // Format method for display
   let displayMethod = entry.method;

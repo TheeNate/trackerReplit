@@ -91,10 +91,34 @@ export function SupervisorVerifyModal({ isOpen, onClose, onSuccess, entry }: Sup
     setCopied(false);
     
     try {
-      // Submit verification request
-      const requestData = selectedSupervisor && selectedSupervisor !== "new"
-        ? { supervisorId: parseInt(selectedSupervisor) }
-        : values;
+      // Handle new supervisor creation and verification request
+      let requestData: any;
+      
+      if (selectedSupervisor && selectedSupervisor !== "new") {
+        // Using existing supervisor
+        requestData = { supervisorId: parseInt(selectedSupervisor) };
+      } else {
+        // Create a new supervisor
+        try {
+          const supervisorResponse = await apiRequest("POST", "/api/supervisors", values);
+          
+          if (!supervisorResponse.ok) {
+            throw new Error("Failed to create supervisor");
+          }
+          
+          const newSupervisor = await supervisorResponse.json();
+          requestData = { supervisorId: newSupervisor.id };
+        } catch (error) {
+          console.error("Error creating supervisor:", error);
+          toast({
+            title: "Error",
+            description: "Failed to create supervisor. Please try again.",
+            variant: "destructive",
+          });
+          setIsLoading(false);
+          return;
+        }
+      }
       
       const response = await apiRequest("POST", `/api/verify-request/${entry.id}`, requestData);
       const data = await response.json();
@@ -107,7 +131,12 @@ export function SupervisorVerifyModal({ isOpen, onClose, onSuccess, entry }: Sup
       
       // For fallback purposes, generate a link directly if there's a token
       if (data.entry && data.entry.verificationToken) {
-        const baseUrl = window.location.origin;
+        // Make sure we always use HTTPS for verification links
+        const baseUrlParts = window.location.origin.split("://");
+        const hostname = baseUrlParts[baseUrlParts.length - 1];
+        const protocol = baseUrlParts[0] === "http" && hostname.includes("replit") ? "https" : baseUrlParts[0];
+        const baseUrl = `${protocol}://${hostname}`;
+        
         const url = `${baseUrl}/verify/${data.entry.verificationToken}`;
         setVerificationUrl(url);
       } else {

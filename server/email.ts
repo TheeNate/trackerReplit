@@ -18,7 +18,8 @@ export const getBaseUrl = () => {
     process.env.REPLIT_DOMAINS.split(',')[0] : 
     'localhost:5000';
   
-  const protocol = process.env.NODE_ENV === 'production' ? 'https' : 'http';
+  // Always use HTTPS for Replit domains to ensure links work properly in emails
+  const protocol = process.env.REPLIT_DOMAINS ? 'https' : 'http';
   return `${protocol}://${domain}`;
 };
 
@@ -55,8 +56,13 @@ export async function sendVerificationRequest(
   user: User,
   entry: Entry
 ): Promise<boolean> {
-  const baseUrl = getBaseUrl();
-  const verificationUrl = `${baseUrl}/verify/${entry.verificationToken}`;
+  // Ensure we always use HTTPS for verification links
+  const domain = process.env.REPLIT_DOMAINS ? 
+    process.env.REPLIT_DOMAINS.split(',')[0] : 
+    'localhost:5000';
+  
+  // Always force HTTPS for verification links
+  const verificationUrl = `https://${domain}/verify/${entry.verificationToken}`;
   
   // Display verification URL in logs for testing/debugging
   console.log("\n-------------------------------------------------");
